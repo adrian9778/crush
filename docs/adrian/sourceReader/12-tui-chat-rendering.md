@@ -1,5 +1,21 @@
 # 聊天与工具渲染：从 Message 到终端像素
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/ui/chat/`、`list/`、`model/chat.go`、`completions/`、`attachments/`
+> 生成方式：源码、渲染测试与 golden 资产静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+领域 Message 经 UI factory 变成 MessageItem；Chat 包装按行 viewport 的 List；各工具 renderer、Markdown、diff 和附件组件生成最终终端字符串。
+
+### 核心调用序列（逐步逻辑）
+1. Workspace 事件更新 Message。2. UI 创建或替换 Item。3. List 计算可见范围。4. Item 使用缓存渲染。5. Chat 把字符串画入 ScreenBuffer。
+
+### 易错点与边界条件
+流式 Markdown 需稳定前缀；工具 factory 必须有 fallback；ANSI 选择和截断不能按字节；TotalHeight 不应进入每帧 resize 热路径。
+
 ## 1. 数据流总览
 
 ```text

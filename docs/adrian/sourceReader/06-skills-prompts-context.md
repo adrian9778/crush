@@ -1,5 +1,21 @@
 # 06. Skills、系统提示词与上下文文件
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/skills/`、`agent/prompt/`、`agent/templates/`、`commands/`
+> 生成方式：源码、模板、发现测试与配置静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+Prompt builder 合并系统模板、Git/工作区上下文和 Skill catalog；每 Workspace 的 skills.Manager 隔离发现结果、激活状态与事件。
+
+### 核心调用序列（逐步逻辑）
+1. 配置决定搜索路径和禁用项。2. Discover 解析并去重 Skill。3. Manager 保存 all/active。4. Coordinator 将 catalog 注入 coder prompt，按需读取正文。
+
+### 易错点与边界条件
+Server 多 Workspace 不能共享 global mirror；上下文文件有优先级与大小边界；Skill 元数据与正文加载状态需要区分。
+
 ## 1. 三者如何协作
 
 Crush 给模型的系统提示由 Go template 生成。模板除了固定行为规范，还注入运行平台、日期、工作目录、Git 状态、用户上下文文件，以及可用 Skill 的**元数据目录**。Skill 正文不会全部塞入系统提示；模型先看到名称/描述/location，相关时再用 `view` 按需读取 `SKILL.md`。这样既省 Token，也能记录实际加载情况。

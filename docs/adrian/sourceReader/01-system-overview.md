@@ -1,5 +1,21 @@
 # 01. 系统总览：Crush 到底是什么
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`main.go`、`internal/cmd/`、`app/`、`workspace/`、`backend/`、`agent/`
+> 生成方式：源码、测试、配置与部署资产静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+CLI 选择本地 App 或远程 Backend；Workspace 统一前端契约，Coordinator 与 SessionAgent 实现核心 Agent，领域服务和基础设施承担状态与副作用。
+
+### 核心调用序列（逐步逻辑）
+1. `main` 进入 Cobra。2. CLI 创建 Workspace 并启动 TUI/Run。3. 提示经 Agent、工具与消息服务到达数据库和事件订阅者。
+
+### 易错点与边界条件
+App 与 Backend 生命周期不同；Session 与 Run 不是同一层；普通事件允许丢弃，关键交互和终态需要可靠投递。
+
 ## 1. 一句话定义
 
 Crush 是一个以 Workspace 为资源边界、以 Session 为对话边界、由 Coordinator 装配模型和工具、由 SessionAgent 执行模型循环，并通过统一 Workspace 接口同时服务本地 TUI 和远程 Client/Server 的终端 AI 编程助手。
@@ -197,3 +213,18 @@ App 将这些来源扇入 `Broker[tea.Msg]`。本地 UI 直接订阅；Server �
 8. 工具执行前经过 Hook 和 Permission。
 9. 关闭时必须先取消/等待 Run，再关闭 DB/MCP/LSP。
 10. 可靠终止信号和普通展示事件不能混为一谈。
+
+## 11. 阅读源码建议顺序
+
+`main.go` → `internal/cmd/root.go` → `internal/app/app.go` →
+`internal/workspace/workspace.go` → `internal/agent/coordinator.go` →
+`internal/agent/agent.go` → `internal/message/message.go`。
+
+## 12. 重新实现检查清单
+
+- [ ] 为 Process、Workspace、Session 和 Run 定义独立生命周期。
+- [ ] 让 UI 只依赖 Workspace 契约，不感知本地/远程分支。
+- [ ] 分离工作区级装配与会话级模型循环。
+- [ ] 把权威持久状态与可恢复的展示事件分开。
+- [ ] 为 Hook、Permission、工具副作用和终态事件定义固定顺序。
+- [ ] 以正常、失败、取消、重连和关闭路径证明边界成立。

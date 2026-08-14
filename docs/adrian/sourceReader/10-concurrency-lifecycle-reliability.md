@@ -1,5 +1,21 @@
 # 10. 并发、生命周期与可靠性专题
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：Agent、App、Backend、Broker、DB、Permission、Question、LSP、MCP、UI
+> 生成方式：实现与竞态、取消、关闭测试交叉分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+Context 树负责取消，锁保护 session dispatch、Backend map 和 registry，Broker 分普通与可靠投递，cleanup 反向释放 Agent、外部进程与数据库引用。
+
+### 核心调用序列（逐步逻辑）
+1. 根 context 派生 Workspace/Run context。2. Run 在 dispatch lock 下选状态。3. 副作用通过 Service/Broker 协调。4. completion flush。5. Close 取消并等待资源退出。
+
+### 易错点与边界条件
+accepted、queued、active 必须分别处理；Backend 锁顺序固定；普通 Broker 可丢；Cmd 不能直接修改 UI 状态；关闭不得等待自身持有的锁。
+
 ## 1. 为什么单独成章
 
 Crush 的多数复杂度不是算法，而是“多个 goroutine、多个 Client、多个 Session、外部进程和数据库关闭同时发生时仍然正确”。若只按包阅读，会错过跨包不变量。
@@ -48,6 +64,19 @@ Backend Workspace 在调用 App.Shutdown 前先阻止新 Run、取消 Workspace 
 3. **active**：有 active cancel function，正在访问 DB/Provider/Tools。
 
 只保存 active cancel 会遗漏 accepted 窗口。AcceptedRun counter、accept sequence 和 cancel high-water mark 使 Cancel 能覆盖取消发生前已接受但未注册的 Run，同时不毒害取消后新提交的 Run。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Accepted: BeginAccepted(sessionID)
+    Accepted --> CancelOnEntry: acceptSeq <= cancelMark
+    Accepted --> Queued: session already busy
+    Accepted --> Active: register activeCancel under dispatchMu
+    Queued --> Accepted: dequeue creates a new reservation
+    Active --> Completing: stream returns or context cancels
+    CancelOnEntry --> Completing: persist canceled assistant
+    Completing --> Flushed: Message.FlushAll
+    Flushed --> [*]: publish one RunComplete
+```
 
 ## 5. Per-session dispatch mutex
 

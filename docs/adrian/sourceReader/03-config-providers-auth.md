@@ -1,5 +1,21 @@
 # 03. 配置、Provider、模型发现与认证
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/config/`、`shellconfig/`、`discover/`、`oauth/`、`schema.json`
+> 生成方式：源码、测试、配置与 Schema 静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+ConfigStore 汇总 `crushrc`、JSON、默认 Provider 元数据和 CLI override；Coordinator 消费最终模型配置，OAuth 层维护外部认证状态。
+
+### 核心调用序列（逐步逻辑）
+1. 发现配置路径。2. 加载并深合并配置。3. 校验/选择 Provider 与模型。4. ConfigStore 原子替换并通知运行对象刷新。
+
+### 易错点与边界条件
+不要原地修改 Config 指针；`crushrc` builtin 仅在 ConfigBuilder context 生效；Token、header 与 DSN 必须保持 Secret 边界。
+
 > 配置不是“读一个 JSON 文件”这么简单。Crush 会发现多级文件、执行 `crushrc`、深度合并、解析 shell 变量、补默认 Provider、发现本地模型、选择 large/small model，并支持运行中安全写回与刷新。
 
 ## 1. 配置系统的分层

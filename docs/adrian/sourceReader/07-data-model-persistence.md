@@ -1,5 +1,21 @@
 # 07. 数据模型、SQLite、服务与事件
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/db/`、`session/`、`message/`、`history/`、`filetracker/`、`pubsub/`
+> 生成方式：实现、迁移、sqlc Schema 与持久化测试交叉分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+SQLite/sqlc 保存 Session、Message 与文件历史；领域 Service 封装事务和事件；Broker 把状态变化桥接到 App、TUI 与 SSE。
+
+### 核心调用序列（逐步逻辑）
+1. db.Connect 应用迁移和 pragma。2. Service 创建领域对象。3. 流式 Message Update 合并 pending state。4. 终态或 Flush 写 SQL 并发布事件。
+
+### 易错点与边界条件
+文本 delta 会 debounce，结构与终态必须同步写；删除跨表使用事务；时间单位、连接引用计数和慢订阅者丢包语义不可忽略。
+
 > 本章从数据库表一直讲到 Go 领域对象、流式写入和 UI 事件。按本文复刻时，应把“持久化事实”和“进程内暂态”明确分开。
 
 ## 1. 数据关系总览

@@ -1,5 +1,21 @@
 # TUI 架构：从 Bubble Tea 主循环到屏幕布局
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/ui/model/`、`ui/common/`、`ui/list/` 与 `internal/ui/AGENTS.md`
+> 生成方式：源码、UI 测试与项目 UI 约束静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+`model.UI` 是唯一 Bubble Tea Model，集中持有页面/焦点状态并路由消息；子组件用命令式 API，布局由矩形集合和 Ultraviolet ScreenBuffer 驱动。
+
+### 核心调用序列（逐步逻辑）
+1. `ui.New` 构造状态。2. `Init` 返回异步命令。3. `Update` 按 dialog、输入、领域事件优先级更新。4. `Draw` 绘制各矩形区域。5. `View` 输出屏幕字符串。
+
+### 易错点与边界条件
+Update 不做 IO；Cmd 不直接改状态；焦点与页面状态是两条轴；终端 resize、窄窗口和 ANSI 列宽必须用专用库处理。
+
 > 目标：让第一次接触终端 UI 的读者，能够按本文搭出 Crush TUI 的骨架。本文只讲顶层架构、状态、消息路由和布局；聊天项的渲染见 `12-tui-chat-rendering.md`，对话框、主题和性能见 `13-tui-dialog-styles-performance.md`。
 
 ## 1. 先建立正确的心智模型

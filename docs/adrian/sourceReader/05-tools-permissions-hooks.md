@@ -1,5 +1,21 @@
 # 05. 工具、权限与 Hooks：Agent 如何安全地操作外部世界
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/agent/tools/`、`agent/hooked_tool.go`、`permission/`、`hooks/`
+> 生成方式：实现、安全测试与工具描述静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+Coordinator 注册内置与 MCP 工具，hookedTool 在权限前执行策略 Hook，Permission 再决定具体工具是否可产生文件、进程、网络或交互副作用。
+
+### 核心调用序列（逐步逻辑）
+1. `buildTools` 构造工具表。2. 模型发出 ToolCall。3. Hook 可允许、拒绝、改写或 halt。4. Permission 判定。5. 工具执行并返回 ToolResult。
+
+### 易错点与边界条件
+Hook approval 必须绑定 ToolCallID；路径和命令链需要单独校验；MCP 动态工具、TUI renderer 与权限描述必须同步演进。
+
 ## 1. 工具的统一形态
 
 所有工具最终实现 `fantasy.AgentTool`：`Info()` 暴露名称、描述和 JSON Schema，`Run(ctx, ToolCall)` 执行，`ProviderOptions/SetProviderOptions` 携带 Provider 缓存配置。多数工具通过 Fantasy 的泛型构造器创建，描述来自同名 `.md` 或 `.md.tpl` 嵌入文件。
@@ -21,7 +37,12 @@ Coordinator 每次 `UpdateModels` 都重建工具：
 9. 按最终工具名排序，保证稳定。
 10. 顶层 Agent 的每个工具外包一层 `hookedTool`；子 Agent 不包。
 
-MCP 工具名称经过命名空间处理，包装器保存 MCP server/name；调用前走统一 Permission 请求，再把 JSON 输入交给 MCP Client。MCP 初始化、重连和配置 reconcile 会维护工具、prompt、resource 注册表；错误状态必须关闭旧 Session 并清空陈旧能力，重连后重新注册。`WaitForInit` 保证首轮 buildTools 不漏掉慢服务。
+MCP 工具名称经过命名空间处理，包装器保存 MCP server/name；调用前走统一
+Permission 请求，再把 JSON 输入交给 MCP Client。MCP 初始化、重连和配置
+reconcile 会维护工具、prompt、resource 注册表；错误状态必须关闭旧 Session
+并清空陈旧能力，重连后重新注册。交互 run 从当时的注册表构建工具，不等待慢
+服务；非交互 run 会在 Coordinator 层等待初始化，以保证它唯一一次工具快照的
+完整性。
 
 ## 3. 内置工具分类详解
 

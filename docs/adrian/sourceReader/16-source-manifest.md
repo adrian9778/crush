@@ -1,5 +1,21 @@
 # 16. 源码完整清单
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：生产 Go 文件、模板、SQL、迁移、Schema、构建与部署资产
+> 生成方式：`rg --files` 盘点与专题覆盖矩阵核对
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+Manifest 是完整性清单：列出运行源码和改变行为的非 Go 资产，并标记 sqlc、Swagger 等生成边界，配合包索引定位专题。
+
+### 核心调用序列（逐步逻辑）
+1. 盘点生产文件。2. 按目录归组。3. 识别入口、生成源和消费者。4. 映射专题文档。5. 通过当前文件列表检查遗漏。
+
+### 易错点与边界条件
+清单是提交快照；测试、生成代码和生产手写代码采用不同口径；文件存在只证明覆盖盘点，不证明运行行为已动态验证。
+
 本清单用于核对阅读覆盖，不替代 [14-package-file-index.md](14-package-file-index.md) 中的职责说明。当前共列出 381 个生产 Go 文件；仓库另有 211 个 Go 测试文件，应按专题章节给出的测试关键词阅读。
 
 ## 1. 生产 Go 文件
@@ -408,6 +424,7 @@
 ### `internal/ui/common`
 
 - `internal/ui/common/ansi16.go`
+- `internal/ui/common/bash.go`
 - `internal/ui/common/button.go`
 - `internal/ui/common/capabilities.go`
 - `internal/ui/common/chromastyle.go`
@@ -602,3 +619,17 @@
 - `internal/swagger/docs.go` 是 Swagger 生成物，事实来源是 Server 路由与注释。
 - 平台后缀文件不是重复代码；Go 会按目标平台选择其中一组。
 - 测试辅助和 golden 虽不进入生产二进制，但记录并发、协议和视觉不变量。
+
+## 4. 阅读源码建议顺序
+
+不要按本清单从上到下逐文件阅读。先用 [01-system-overview.md](01-system-overview.md)
+建立骨架，再按 [14-package-file-index.md](14-package-file-index.md) 进入专题；完成
+调用链后回到本清单，核对是否遗漏生产文件、配置、模板、SQL 或平台资产。
+
+## 5. 重新实现检查清单
+
+- [ ] 当前生产 Go 文件集合与本清单一致。
+- [ ] 非 Go 行为源均有明确加载或生成消费者。
+- [ ] sqlc、Swagger 与平台文件的维护入口没有混淆。
+- [ ] 新增目录已经进入覆盖矩阵和至少一篇专题。
+- [ ] 删除/重命名文件后所有相对链接和符号引用已更新。

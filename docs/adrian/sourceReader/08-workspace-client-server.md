@@ -1,5 +1,21 @@
 # 08. Workspace 与 Client/Server 架构
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/workspace/`、`backend/`、`server/`、`client/`、`proto/`
+> 生成方式：源码、协议、生命周期与重连测试静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+Workspace 是 TUI 防腐层；AppWorkspace 直接委派 App，ClientWorkspace 通过 Client/Server/Proto 到 Backend，Backend 管理多工作区生命周期。
+
+### 核心调用序列（逐步逻辑）
+1. Client 创建/claim Workspace。2. Backend 规范化路径并创建 App。3. HTTP 接受带 RunID 的消息。4. 后台 RunAccepted 执行。5. SSE 回送领域事件并更新客户端缓存。
+
+### 易错点与边界条件
+请求 context 不能错误取消后台初始化；多个 grace period 含义不同；重连必须假设事件可能永久丢失并以重新拉取状态恢复。
+
 ## 1. `workspace.Workspace`：前端的防腐层
 
 `internal/workspace/workspace.go` 定义一个较大的接口，按 Sessions、Messages、Agent、Permissions、Questions、FileTracker、History、LSP、Config、Project、Skills、MCP、Events 分组。

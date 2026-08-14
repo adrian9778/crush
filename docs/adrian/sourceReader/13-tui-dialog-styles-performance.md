@@ -1,5 +1,21 @@
 # 对话框、样式、终端能力与性能边界
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/ui/dialog/`、`styles/`、`common/`、`image/`、`notification/`
+> 生成方式：源码、UI 约束、性能实现与 golden 测试静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+Overlay 管理 Dialog 栈；Styles 由结构契约、token 驱动 quickStyle 和主题 override 三层构成；common 提供宽度、Markdown、Chroma 和 scrollbar 共享能力。
+
+### 核心调用序列（逐步逻辑）
+1. UI push Dialog。2. Overlay 优先路由消息。3. Dialog 用 RenderContext 计算内容区。4. Styles/缓存生成内容。5. 最后覆盖绘制到 ScreenBuffer。
+
+### 易错点与边界条件
+lipgloss Width 包含边框和 padding；文本内缩用 Padding 非 Margin；主题基础不得硬编码具体 palette；昂贵 Chroma/lexer 选择必须缓存。
+
 ## 1. Overlay：为什么对话框是栈
 
 `dialog.Overlay` 保存 `[]Dialog`，末尾是最前面的活动对话框。`OpenDialog` push，`CloseFrontDialog` pop，`BringToFront` 调整顺序；Draw 按数组顺序画，因此后画的覆盖先画的。

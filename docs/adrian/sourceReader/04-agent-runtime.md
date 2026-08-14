@@ -1,5 +1,21 @@
 # 04. Agent 运行时：从一次请求到完整对话循环
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/agent/`、`internal/message/`、`internal/session/`
+> 生成方式：实现与 dispatch、cancel、queue、completion 测试交叉分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+Coordinator 处理工作区级模型、工具和认证刷新；SessionAgent 处理单 Session 的 dispatch、流式循环、消息持久化、排队和取消。
+
+### 核心调用序列（逐步逻辑）
+1. Coordinator 等待必要初始化并刷新模型。2. 构造 SessionAgentCall。3. SessionAgent 选择 active/queued/cancel-on-entry。4. Stream 消息与工具结果。5. flush 后发布 RunComplete。
+
+### 易错点与边界条件
+带 RunID 的 queued prompt 必须独立成 turn；accepted run 取消采用序列高水位；认证重试的多个 completion 只能对外发布最终结果。
+
 > 阅读范围：`internal/agent/` 的生产代码与对应测试。本章以“能够重新实现”为目标，先讲职责，再按真实执行顺序展开。
 
 ## 1. 先建立正确心智模型
@@ -56,7 +72,9 @@ Crush 的 Agent 不是一个单独的“调用模型”函数，而是两层协�
 3. 以 active skill 创建 `skills.Tracker`。
 4. 读取 coder Agent 配置并构造 coder prompt 模板。
 5. `buildAgent` 先构造 large/small Model 和空工具、空系统提示的 SessionAgent。
-6. 两个 `readyWg` goroutine 分别生成系统提示与等待 MCP 后构建工具。
+6. 两个 `readyWg` goroutine 分别生成系统提示与按当前注册表构建工具；它们不等待
+   MCP 初始化，后续 run 会按交互模式决定是否等待，晚到的 MCP 工具在之后的
+   `UpdateModels` 中进入工具表。
 
 初始化 goroutine 使用 `context.WithoutCancel`：HTTP 初始化请求结束不能让工作区永久处于 `readyWg.Wait()` 返回 `context.Canceled` 的坏状态。测试 `TestBuildAgentReadinessSurvivesCallerCancellation` 固化了这个约束。
 
@@ -64,8 +82,10 @@ Crush 的 Agent 不是一个单独的“调用模型”函数，而是两层协�
 
 下面严格按 `coordinator.run` 的代码顺序：
 
-1. 等待初始化任务完成。
-2. `mcp.WaitForInit(ctx)`，确保慢启动 MCP 的工具已经进注册表。
+1. 等待系统提示和初始工具表的本地构建任务完成。
+2. 非交互 Coordinator 调用 `mcp.WaitForInit(ctx)`，确保单次运行读取到初始化
+   完成时的工具表；交互 Coordinator 不等待慢 MCP，先用当前已注册工具运行，
+   后续 turn 再拾取新工具，避免首条提示被最慢连接超时冻结。
 3. `UpdateModels`：从最新配置重建 large/small Model，同时重建工具列表并原子替换进 SessionAgent。
 4. 计算最大输出 Token：用户模型配置优先，否则用 Catwalk 默认值。
 5. 合并调用参数。ProviderOptions 的优先级是 Catwalk 默认 < Provider 配置 < SelectedModel 配置；普通采样参数是用户值优先于 Catwalk。
@@ -75,6 +95,32 @@ Crush 的 Agent 不是一个单独的“调用模型”函数，而是两层协�
 9. 记录调用前已加载的 Skill 名称，执行 `SessionAgent.Run`，结束后记录本 turn 新加载与可能相关但未加载的 Skill。
 10. 若最终仍为 Hyper 401，通知 UI 重新认证。
 11. 把最后一次 `RunComplete` 用 must-deliver 发布，并在 Context 中标记已发布，避免 HTTP dispatcher 再发一次兜底事件。
+
+```mermaid
+sequenceDiagram
+    participant Entry as "UI 或 backend.SendMessage"
+    participant Coord as "coordinator.run"
+    participant SA as "sessionAgent.Run"
+    participant Fantasy as "fantasy.Agent.Stream"
+    participant Msg as "message.Service"
+    participant Tool as "hookedTool / concrete tool"
+    participant Done as "runComplete Broker"
+    Entry->>Coord: SessionID、RunID、prompt、attachments
+    Coord->>Coord: 等待 readiness；按 interactive 决定是否 WaitForInit
+    Coord->>SA: SessionAgentCall
+    SA->>Msg: Create user / assistant
+    SA->>Fantasy: Stream(history, tools, provider options)
+    loop 每个模型 step
+        Fantasy-->>SA: reasoning/text/tool call
+        SA->>Msg: Update（delta debounce，结构变化同步）
+        Fantasy->>Tool: Execute(tool context)
+        Tool-->>Fantasy: ToolResult
+    end
+    SA->>Msg: FlushAll
+    SA-->>Coord: result / error + OnComplete
+    Coord->>Done: PublishMustDeliver(final RunComplete)
+    Done-->>Entry: RunID、MessageID、Text、error/cancelled
+```
 
 Provider 专属选项由 `getProviderOptions` 转换。例如 OpenAI Responses、Anthropic thinking/effort、Google thinking_config、OpenRouter reasoning、OpenAI-compatible extra_body 都在这里适配。`ModelProvider` 回调使认证刷新后下一次重试可取得刚重建的 Model，而不是继续使用旧凭据对象。
 

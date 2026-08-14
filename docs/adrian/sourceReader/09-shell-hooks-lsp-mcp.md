@@ -1,5 +1,21 @@
 # 09. Shell、Hooks、LSP 与 MCP
 
+> 状态：待复核生成稿｜生成日期：2026-08-14
+> 基准提交：`5712d4839a6a10e9940804d511bb322dbe73a511`｜工作区：clean（开始分析时）
+> 源码范围：`internal/shell/`、`hooks/`、`lsp/`、`agent/tools/mcp/`
+> 生成方式：源码、协议测试、配置与跨平台实现静态分析
+
+## 快速摘要
+
+### 架构总览（模块与依赖）
+嵌入式 Shell 提供命令和 builtin 分派；Hook 是工具前策略层；LSP Manager 延迟管理语言服务；MCP registry 动态管理外部工具、资源和 prompt。
+
+### 核心调用序列（逐步逻辑）
+1. 配置注册 Shell/Hook/LSP/MCP。2. 工具或文件事件触发对应 manager。3. manager 建立进程/transport/session。4. 结果、诊断或动态工具回到 Agent/App。
+
+### 易错点与边界条件
+外部进程必须响应 context；LSP 编辑涉及位置编码；MCP renew 需 generation 与并发串行化；Hook 超时后不能泄漏 goroutine 或迟到副作用。
+
 这四个子系统把模型或配置连接到外部世界，也是取消、进程泄漏、权限和协议错误最集中的区域。
 
 ## 第一部分：嵌入式 Shell
@@ -179,9 +195,17 @@ Close 有 5 秒上限，因为 JSON-RPC 内部 send lock 可能不响应 Context
 
 ## 18. 全局状态与初始化 barrier
 
-MCP 包维护并发安全的全局 sessions、states、tools、resources、prompts、pending auth、generation 和事件 Broker。App.New 先 `ArmInit()` 再 goroutine `Initialize()`；Coordinator 每次构建本轮工具表前 `WaitForInit()`。
+MCP 包维护并发安全的全局 sessions、states、tools、resources、prompts、pending
+auth、generation 和事件 Broker。`App.New` 先 `ArmInit()` 再 goroutine
+`Initialize()`。Coordinator 的 readiness goroutine 只读取当前注册表，不再阻塞
+等待 MCP；`coordinator.run` 仅在非交互模式调用 `WaitForInit()`，交互模式让后续
+turn 通过 `UpdateModels` 拾取晚到工具。
 
-先 Arm 再启动 goroutine非常关键，否则 WaitForInit 可能在 goroutine 尚未登记进行中时立即返回，导致本轮看不到慢启动 MCP 工具。
+先 Arm 再启动 goroutine 非常关键，否则非交互路径的 `WaitForInit` 可能在
+goroutine 尚未登记进行中时立即返回，导致唯一一次工具快照看不到慢启动 MCP
+工具。`waitforinit_test.go` 固化阻塞、未 Arm 立即返回和完成后的工具可见性；
+`coordinator_readiness_test.go` 则固定 readiness 构建不等待 MCP 且不受短请求
+Context 取消影响。
 
 ## 19. Transport
 
