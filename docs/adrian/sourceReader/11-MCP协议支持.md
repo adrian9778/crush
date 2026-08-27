@@ -283,10 +283,20 @@ internal/agent/tools/mcp/init.go
 5. 如果是浏览器抑制流程，设置 `oauthHandler.SetBrowserSuppress(true)`
 6. 创建 channel gate 并包装传输层：`&channelTransport{inner: transport, name: name, gate: channelGate}`
 7. 创建 `mcp.Client`，设置：
-   - `ToolListChangedHandler` — 发布 `EventToolsListChanged`
-   - `PromptListChangedHandler` — 发布 `EventPromptsListChanged`
-   - `ResourceListChangedHandler` — 发布 `EventResourcesListChanged`
+   - `ToolListChangedHandler` — 发布 `EventToolsListChanged`（**条件性**，见下方）
+   - `PromptListChangedHandler` — 发布 `EventPromptsListChanged`（**条件性**）
+   - `ResourceListChangedHandler` — 发布 `EventResourcesListChanged`（**条件性**）
    - `LoggingMessageHandler` — 转发到 slog
+
+**Sessionless 条件性 Handler 跳过**：
+
+```
+internal/agent/tools/mcp/init.go
+函数：createSession
+偏移：+39 ～ +55
+```
+
+当 `m.IsSessionless(resolver)` 返回 `true` 时，三个 list-changed handler **不注册**。原因：go-sdk 在任一 handler 被设置时打开 SEP-2575 "subscriptions/listen" 流，无会话服务器（如 GitHub MCP）对该 POST 返回 404（"session not found"），SDK 将其视为致命错误并断开连接。跳过 handler 避免打开该流，代价是失去该服务器的实时列表变更通知。`IsSessionless()` 的检测逻辑见文档 08 第 6 节。
 8. `client.Connect(mcpCtx, transport, nil)` — 发起 LSP initialize 握手
 9. 停止 cancelTimer
 10. **Channel gate 解析**：
@@ -555,7 +565,25 @@ internal/agent/tools/mcp/lifecycle.go
 函数：mcpConfigEqual
 ```
 
-逐字段比较两个 `MCPConfig`，忽略 `OAuthToken`（内部管理）。比较的字段：Command, Env, Args, Type, URL, Disabled, DisabledTools, EnabledTools, Timeout, Headers, OAuth, OAuthClientID, OAuthClientSecret, OAuthCallbackPort。
+逐字段比较两个 `MCPConfig`，忽略 `OAuthToken`（内部管理）。比较的字段：Command, Env, Args, Type, URL, Disabled, DisabledTools, EnabledTools, Timeout, Headers, OAuth, OAuthClientID, OAuthClientSecret, OAuthCallbackPort, **Sessionless**。
+
+`Sessionless` 字段使用 `boolPtrEqual` 辅助函数比较：
+
+```
+函数：boolPtrEqual
+偏移：+0 ～ +5
+```
+
+```go
+func boolPtrEqual(a, b *bool) bool {
+    if a == nil || b == nil {
+        return a == b
+    }
+    return *a == *b
+}
+```
+
+该函数处理 `*bool` 的三态语义：两个 `nil` 指针视为相等，`nil` 与非 `nil` 不等，非 `nil` 时比较解引用值。这确保修改 `Sessionless` 配置字段会触发 `reconcile` 中的服务器重启。
 
 ### Reinitialize
 

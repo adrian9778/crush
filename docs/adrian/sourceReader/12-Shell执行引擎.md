@@ -302,6 +302,33 @@ return interp.ExecHandler(handler)
 
 顺序设计：builtins 先于一切，确保 Crush 的 jq 实现优先于 PATH 中的 jq；脚本分发在阻止列表之前，使 deny 规则能看到已解析的 argv；阻止列表在 coreutils 之前，确保安全规则不可绕过。
 
+### MCP 配置内置命令
+
+```
+internal/shellconfig/mcp.go
+函数：handleMCP
+```
+
+`mcp` 内置命令支持 `mcp add` 子命令，用于在 crushrc 中配置 MCP 服务器。可用的标志包括：
+
+| 标志 | 类型 | 说明 |
+|------|------|------|
+| `--type` | string | 连接类型（stdio/sse/http） |
+| `--url` | string | HTTP/SSE 服务器 URL |
+| `--command` | string | stdio 服务器命令 |
+| `--timeout` | int | 连接超时（秒） |
+| `--sessionless` | bool | 标记无会话服务器（跳过 subscriptions/listen 流） |
+| `--disabled` | bool | 禁用此 MCP 服务器 |
+| `--oauth` | bool | 启用 OAuth 2.1 授权流程 |
+
+`--sessionless` 标志映射到 `MCPConfig.Sessionless` 字段。用法示例：
+
+```
+mcp add github --type http --url https://api.github.com/mcp --sessionless true
+```
+
+该标志解决 GitHub MCP 等无会话服务器的连接问题——详见文档 11 第 5 节"Sessionless 条件性 Handler 跳过"。
+
 ### execMiddleware
 
 ```

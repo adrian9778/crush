@@ -20,6 +20,8 @@
 10. [对话框覆盖层](#10-对话框覆盖层)
 11. [缓存策略](#11-缓存策略)
 12. [快捷键映射](#12-快捷键映射)
+13. [退出横幅渲染](#13-退出横幅渲染)
+14. [高亮提取与代码块渲染](#14-高亮提取与代码块渲染)
 
 ## 1. 架构概览
 
@@ -678,6 +680,142 @@ Struct：KeyMap
 ```
 
 根据当前 UI 状态和焦点动态生成帮助绑定——busy 时显示 Cancel，编辑器空时显示命令提示，内联编辑器激活时显示其专属帮助。
+
+---
+
+## 13. 退出横幅渲染
+
+### exitbanner 包
+
+```
+internal/ui/exitbanner/exitbanner.go
+包：exitbanner
+```
+
+退出横幅渲染逻辑从 `internal/cmd/root.go` 和 `internal/ui/model/ui.go` 提取到独立的 `exitbanner` 包，实现可测试的分离。
+
+**核心函数**：
+
+```
+函数：Render
+参数：banner config.ExitBanner
+参数：sess *session.Session
+参数：width int
+返回：string
+```
+
+`Render` 根据 `ExitBanner` 配置值切换渲染模式：
+
+| ExitBanner 值 | 行为 |
+|---------------|------|
+| `ExitBannerNone` | 返回空字符串 |
+| `ExitBannerCompact` | 仅返回会话恢复提示（有会话时），无 logo |
+| `ExitBannerDefault` / 其他 | 完整横幅：logo + 随机告别语 + 会话恢复提示 |
+
+**辅助函数**：
+
+- `logoSection(contentWidth int) string` — 渲染 ASCII logo + "Thanks for using Crush!" + 随机告别语
+- `sessionResumeLines(sess *session.Session, contentWidth int) string` — 构建两行恢复提示："Session \<title\>" 和 "Continue crush -s \<hash\>"，标题通过 `ansi.Truncate` 截断以适应宽度
+- `randomExitMessage() string` — 从 21 条随机告别语中返回一条（如 "See ya later."、"Time for a snack."）
+
+常量 `FallbackWidth = 80` 在 stdout 非终端时使用。
+
+### root.go 集成
+
+```
+internal/cmd/root.go
+函数：printSessionResume
+偏移：+0 ～ +12
+```
+
+重构后的 `printSessionResume` 是一个薄包装：
+
+1. 通过 `term.GetSize(os.Stdout.Fd())` 获取终端宽度
+2. 调用 `exitbanner.Render(banner, model.CurrentSession(), tw)` — 横幅样式从 `cfg.Options.TUI.ExitBanner` 读取
+3. 非空结果输出到 `colorprofile.NewWriter(os.Stderr, os.Environ())`
+
+### CurrentSession 访问器
+
+```
+internal/ui/model/ui.go
+Struct：UI
+方法：CurrentSession
+偏移：+0 ～ +3
+```
+
+`CurrentSession() *session.Session` 返回 `m.session`，文档注释明确说明"在 TUI 退出后调用是安全的"。此方法让 `root.go` 在 `program.Run()` 返回后读取当前会话，而无需访问未导出的 `session` 字段。
+
+## 14. 高亮提取与代码块渲染
+
+### highlight.go 重构
+
+```
+internal/ui/list/highlight.go
+```
+
+高亮提取逻辑被拆分为多个独立、可测试的函数：
+
+```
+函数：HighlightContent
+参数：content string, area image.Rectangle
+参数：startLine, startCol, endLine, endCol int
+返回：string
+```
+
+`HighlightContent` 返回高亮区域的文本内容（不应用高亮样式），是 `Highlight` 的"提取"对应物。流程：
+
+1. 通过 `stringext.NormalizeSpace(content)` 规范化空白
+2. 调用 `renderBuffer` 将内容渲染到 `uv.ScreenBuffer`
+3. 调用 `extractRows` 从缓冲区提取选中区域的行文本
+4. 调用 `joinRows` 将行文本拼合为最终结果
+
+**辅助函数链**：
+
+| 函数 | 职责 |
+|------|------|
+| `renderBuffer(content, area, width, height)` | 将内容绘制到指定尺寸的 `uv.ScreenBuffer` |
+| `extractRows(buf, startLine, startCol, endLine, endCol, height)` | 从缓冲区提取选中区域的每行文本 |
+| `extractRow(line, colStart, colEnd)` | 提取单行中两列之间的文本，裁剪到末尾有内容的单元格 |
+| `joinRows(rows, width)` | 拼合行文本，判断行边界是真实换行还是自动换行 |
+| `isWordWrap(text, next, width)` | 判断行边界是否为自动换行（阈值 `width*3/5`，即 60% 宽度） |
+| `startsBlock(row)` | 判断行是否开始新的 markdown 块（列表项、标题等） |
+
+`Highlight` 和 `HighlightBuffer` 的关系：`Highlight` 调用 `HighlightBuffer` 并返回 `buf.Render()`，将核心高亮逻辑与渲染分离。
+
+### stringext.NormalizeSpace
+
+```
+internal/stringext/string.go
+函数：NormalizeSpace
+偏移：+0 ～ +8
+```
+
+`NormalizeSpace(content string) string` 集中处理空白规范化：
+
+1. 将 `\r\n` 替换为 `\n`（Windows 换行转 Unix）
+2. 将 `\t` 替换为四个空格
+3. 仅裁剪首尾换行符（`strings.Trim(content, "\n")`）
+
+文档注释明确说明："保留每行缩进：裁剪空格会吃掉首行的前导空格并破坏代码预览的缩进。"此函数被 `highlight.go` 的 `HighlightContent` 和 `HighlightBuffer` 使用。
+
+### xchroma 代码块缩进修复
+
+```
+internal/ui/xchroma/chroma.go
+函数：renderLines
+偏移：+0 ～ +12
+```
+
+`renderLines(s lipgloss.Style, value string) string` 解决多行 token 值的缩进损坏问题：Lip Gloss 在渲染多行字符串时会等化行宽，在注释后的行填充多余空格并破坏缩进。
+
+实现方式：如果值不含 `\n`，直接通过 `s.Render(value)` 渲染；如果含 `\n`，按 `\n` 拆分，逐行通过 `s.Render(line)` 渲染，再用纯 `\n` 拼接。
+
+```
+函数：Formatter
+调用偏移：~+32
+```
+
+`Formatter` 函数中，原先的 `fmt.Fprint(w, s.Render(value))` 改为 `fmt.Fprint(w, renderLines(s, value))`，将多行 token 值路由到逐行渲染。
 
 ---
 

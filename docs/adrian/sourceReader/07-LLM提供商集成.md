@@ -357,6 +357,28 @@ Hyper 的 provider 元数据（支持的模型列表、定价等）在编译时�
 
 `sync.OnceValue` 确保只解析一次。支持 `HYPER_URL` 环境变量覆盖 API endpoint。
 
+### 模型目录
+
+```
+internal/agent/hyper/provider.json
+```
+
+当前嵌入的 `provider.json` 包含 **28 个模型**，覆盖 9 个模型族：
+
+| 模型族 | 代表模型 | 说明 |
+|--------|---------|------|
+| DeepSeek | deepseek-v4-flash, deepseek-v4-pro | 推理模型，最高 1M 上下文 |
+| GLM | glm-5, glm-5.1, glm-5.2 | 智谱 GLM 系列 |
+| Gemma | gemma-4-26b-a4b-it | Google 轻量模型 |
+| gpt-oss | gpt-oss-120b | 开源 GPT，7 级推理 |
+| Kimi | kimi-k2.5, kimi-k2.6, kimi-k2.7-code, kimi-k3 | 月之暗面 Kimi 系列 |
+| Llama | llama-3.3-70b, llama-4-maverick-17b | Meta 开源模型 |
+| MiniMax | minimax-m2.7, minimax-m3 | MiniMax 系列 |
+| Qwen | qwen3.6~3.8 多个变体 | 阿里通义千问系列（默认模型） |
+| Qwen Coder | qwen3-coder-480b | 代码专用 |
+
+默认大模型：`qwen3.8-max`，默认小模型：`qwen3.8-27b`。API endpoint 为 `https://hyper.charm.land/api/v1/fantasy`。定价范围从 $0.12/M tokens（Gemma 4）到 $16.33/M output tokens（Kimi K3）。
+
 ### 信用余额
 
 ```
