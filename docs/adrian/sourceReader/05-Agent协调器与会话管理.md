@@ -3,8 +3,9 @@
 # Agent 协调器与会话管理
 
 > **场景**：理解从用户提交 prompt 到 LLM 流式响应返回的完整 Agent 调度链路，包括 Coordinator 层、SessionAgent 层、会话队列、取消机制、自动摘要和标题生成。
-> **时间**：2026-08-27 (CST)
-> **版本**：Crush @ main branch, Go 1.26.6
+> **时间**：2026-09-28 (CST)
+> **版本**：Crush @ main branch, Go 1.27.0
+> **同步基准**：commit 47b11b84 → 4d9b52c5（108 个提交）
 
 ## 本文件内容
 
@@ -22,6 +23,10 @@
 12. [Sub-Agent 调度](#12-sub-agent-调度)
 13. [模型与工具的运行时更新](#13-模型与工具的运行时更新)
 14. [OAuth 令牌刷新与重试](#14-oauth-令牌刷新与重试)
+15. [Plan Mode：计划代理](#15-plan-mode计划代理)
+16. [Claude Channels：通道投递与回复](#16-clade-channels通道投递与回复)
+17. [请求超时：requestTimeoutModel](#17-请求超时requesttimeoutmodel)
+18. [循环检测：loop_detection](#18-循环检测loop_detection)
 
 ## 1. Coordinator 层：构造与初始化
 
@@ -40,7 +45,7 @@ Struct：CoordinatorOptions
 ```
 internal/agent/coordinator.go
 函数：NewCoordinator
-偏移：+0 ～ +50
+偏移：+191 ～ +258
 ```
 
 执行步骤：
@@ -52,6 +57,16 @@ internal/agent/coordinator.go
 5. 调用 `coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))` 构建 coder 提示词
 6. 调用 `c.buildAgent(ctx, prompt, agentCfg, false)` 构建首个 SessionAgent
 7. 将 agent 存入 `c.currentAgent` 和 `c.agents[config.AgentCoder]`
+8. **新增**：从配置读取 `AgentPlan` 的 agent 配置（`config.AgentPlan = "plan"`）
+9. **新增**：调用 `planPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))` 构建 plan 提示词
+10. **新增**：调用 `c.buildAgent(ctx, planSystemPrompt, planCfg, false)` 构建 plan SessionAgent
+11. **新增**：将 plan agent 存入 `c.agents[config.AgentPlan]`
+
+```
+关键设计：双 Agent 架构
+```
+
+自 47b11b84 以来，Coordinator 同时构建两个顶层 Agent：`coder`（默认主代理）和 `plan`（计划代理）。`plan` 代理使用独立的系统提示词（`templates/plan.md.tpl`）和工具集（仅只读工具），用于在用户切换到 plan 模式时提供架构分析和计划制定能力。两个代理共享同一个 `coordinator` 实例，通过 `c.agents` map 按名称索引。
 
 ### buildAgent
 
@@ -80,7 +95,7 @@ internal/agent/coordinator.go
 ```
 internal/agent/coordinator.go
 函数：buildAgentModels
-偏移：+0 ～ +83
+偏移：+968 ～ +1070
 ```
 
 执行步骤：
@@ -91,7 +106,20 @@ internal/agent/coordinator.go
 4. 在 provider 的 `Models` 列表中查找匹配的 `catwalk.Model`
 5. 如果是 OpenRouter 且模型支持 exacto，追加 `:exacto` 后缀
 6. 调用 `provider.LanguageModel(ctx, modelID)` 创建 `fantasy.LanguageModel`
-7. 返回两个 `Model` 结构体（large 和 small）
+7. **新增**：调用 `newRequestTimeoutModel(model, c.cfg.Config().Options.GetRequestTimeout())` 包装请求超时
+8. **新增**：如果 provider 是 Hyper，调用 `newHyperCreditsModel(model, c.hyperAPIKey)` 包装信用刷新
+9. 返回两个 `Model` 结构体（large 和 small），包含 `Model`, `CatwalkCfg`, `ModelCfg`, `FlatRate`
+
+```
+关键设计：模型包装管道
+```
+
+自 47b11b84 以来，`buildAgentModels` 在创建 `fantasy.LanguageModel` 后增加了两层装饰器包装：
+
+1. **requestTimeoutModel**（`internal/agent/request_timeout.go`）：为每次请求设置超时。非流式调用使用硬 deadline，流式调用使用空闲超时（每收到一个 part 重置计时器）。超时值来自 `Options.GetRequestTimeout()`，默认 120 秒。
+2. **hyperCreditsModel**（`internal/agent/hyper_credits.go`）：仅当 provider 为 Hyper 时启用。每次请求成功后在后台刷新信用余额，使用 coalescing 机制避免并发刷新。
+
+包装顺序：`LanguageModel` → `requestTimeoutModel` → `hyperCreditsModel`。外层包装器先执行，确保超时控制覆盖信用刷新。
 
 ```mermaid
 flowchart TD
@@ -113,14 +141,14 @@ flowchart TD
 ```
 internal/agent/coordinator.go
 函数：run
-偏移：+0 ～ +115
+偏移：+303 ～ +427
 ```
 
 ### 执行步骤
 
 1. **等待就绪**：`c.readyWg.Wait()` — 确保 system prompt 和 tools 构建完成
 
-2. **MCP 等待**：如果是非交互模式（`!c.interactive`），调用 `mcp.WaitForInit(ctx)` 等待所有 MCP 服务器初始化完成。交互模式不等待——慢速 MCP 服务器不会阻塞首条消息
+2. **MCP 等待**：如果是非交互模式（`!c.interactive`），调用 `mcp.WaitForInitBudget(ctx, mcp.InitWaitBudget)` 等待所有 MCP 服务器初始化完成。`InitWaitBudget` 常量为 10 秒，deadline 锚定在 MCP 初始化启动时刻（`initArmedAt`），多个串行 waiter 共享同一个 deadline。交互模式不等待——慢速 MCP 服务器不会阻塞首条消息
 
 3. **刷新模型**：`c.UpdateModels(ctx)` — 重新构建 large/small 模型，确保使用最新配置
 
@@ -134,13 +162,17 @@ internal/agent/coordinator.go
 
 8. **提取 RunID**：`RunIDFromContext(ctx)` — 从 context 中提取调用方提供的 RunID（用于 `crush run` 的可靠退出）
 
-9. **执行 run 闭包**：调用 `c.currentAgent.Run(ctx, SessionAgentCall{...})`，传入所有参数
+9. **提取 Channel**：`ChannelFromContext(ctx)` — 从 context 中提取通道名称（用于 Claude Channels 投递）
 
-10. **技能使用日志**：`logTurnSkillUsage` — 记录本轮加载的技能
+10. **同步会话通道**：`syncSessionChannel(ctx, sessionID, channel)` — 如果通道名非空且与当前会话不同，调用 `sessions.SetChannel` 更新绑定
 
-11. **未授权处理**：如果错误是 HTTP 401 且 provider 是 hyper，发布 `TypeReAuthenticate` 通知
+11. **执行 run 闭包**：调用 `c.currentAgent.Run(ctx, SessionAgentCall{..., Channel: channel})`，传入所有参数
 
-12. **发布 RunComplete**：如果 `hasLatest` 且 `c.runComplete != nil`，使用 `PublishMustDeliver` 发布最终的 RunComplete，并调用 `MarkRunCompletePublished(ctx)` 标记已发布
+12. **技能使用日志**：`logTurnSkillUsage` — 记录本轮加载的技能
+
+13. **未授权处理**：如果错误是 HTTP 401 且 provider 是 hyper，发布 `TypeReAuthenticate` 通知
+
+14. **发布 RunComplete**：如果 `hasLatest` 且 `c.runComplete != nil`，使用 `PublishMustDeliver` 发布最终的 RunComplete，并调用 `MarkRunCompletePublished(ctx)` 标记已发布
 
 ### RunComplete 合并机制
 
@@ -153,6 +185,30 @@ internal/agent/coordinator.go
 问题场景：第一次尝试返回 401 未授权 → fantasy 自动刷新 token 并重试 → 第二次尝试成功。如果不合并，第一次的失败 RunComplete 会先到达订阅者，`crush run` 会在重试成功前就退出。
 
 解决方案：`onComplete` 闭包只更新 `latest` 变量，不直接发布。重试链结束后，`run` 函数统一发布一次 `latest`。
+
+### 新增：WaitForInitBudget
+
+```
+internal/agent/tools/mcp/init.go
+常量：InitWaitBudget = 10 * time.Second
+函数：WaitForInitBudget(ctx context.Context, budget time.Duration) error
+```
+
+自 47b11b84 以来，非交互模式使用 `WaitForInitBudget` 替代 `WaitForInit`。`WaitForInitBudget` 的 deadline 锚定在 MCP 初始化启动时刻（`initArmedAt`），而非调用时刻。这意味着多个串行 waiter 共享同一个 deadline，不会因为前面的 waiter 消耗了预算而缩短后续 waiter 的等待时间。
+
+如果 MCP 服务器在 10 秒内未就绪，`WaitForInitBudget` 返回 nil（不报错），run 继续执行。迟到的 MCP 服务器在后续轮次出现。这确保卡死的 MCP 服务器不会让整轮消息无限阻塞。
+
+### 新增：syncSessionChannel
+
+```
+internal/agent/coordinator.go
+函数：syncSessionChannel
+偏移：+440 ～ +458
+```
+
+`syncSessionChannel(ctx, sessionID, channel)` 在每次 run 时同步会话的通道绑定。如果 `ChannelFromContext(ctx)` 返回非空通道名，且与当前会话的 `Channel` 字段不同，则调用 `sessions.SetChannel` 更新绑定。
+
+DB 错误仅记录警告但不中断执行，因为通道绑定是溯源信息而非前置条件。这确保 Claude Channels 投递的消息能正确关联到发起会话，用于后续的自动回复路由。
 
 ## 3. SessionAgent.Run：流式执行的核心
 

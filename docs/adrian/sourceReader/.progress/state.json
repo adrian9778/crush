@@ -1,0 +1,12 @@
+{
+  "overall_status": "in_progress",
+  "current_file": "05-Agent协调器与会话管理.md",
+  "current_phase": "drafted",
+  "last_completed": null,
+  "completed": [],
+  "baseline_commit": "47b11b84",
+  "target_commit": "4d9b52c5",
+  "total_commits": 108,
+  "started_at": "2026-09-28T13:23:00+08:00",
+  "notes": "Sync docs/adrian/sourceReader/ with code changes since 47b11b84. Function-level detail required. Evidence collected for all 10 docs via subagents. Doc 05 partially drafted: header, TOC, NewCoordinator, buildAgentModels, run sections updated. Remaining: §6-§14 edits, §15-§18 new sections."
+}

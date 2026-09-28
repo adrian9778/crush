@@ -1,0 +1,100 @@
+{
+  "tasks": [
+    {
+      "file": "05-Agent协调器与会话管理.md",
+      "level": "module",
+      "source_scope": "internal/agent/coordinator.go, internal/agent/agent.go, internal/agent/channel.go, internal/agent/channelreply.go, internal/agent/hyper_credits.go, internal/agent/request_timeout.go, internal/agent/loop_detection.go, internal/agent/prompts.go",
+      "status": "in_progress",
+      "phase": "drafted",
+      "commits": ["1648f10a", "564d14e4", "a98394ff", "b07464e9", "b8e93d11", "d55e017d", "80ebee41", "63829edf", "cb85d7b6", "8e5b708d", "b4e25013", "35a7bcab", "63a73bab", "f9746789", "65a9b8d9", "1ea27147", "1e5be92e"]
+    },
+    {
+      "file": "06-工具系统详解.md",
+      "level": "module",
+      "source_scope": "internal/agent/tools/bash.go, internal/agent/tools/job_output.go, internal/agent/tools/mcp/channel.go, internal/agent/channelreply.go",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["b8e93d11", "10ec02a5", "564d14e4", "1648f10a", "63829edf", "8db8331c"]
+    },
+    {
+      "file": "07-LLM提供商集成.md",
+      "level": "module",
+      "source_scope": "internal/agent/coordinator.go, internal/oauth/openai/, internal/agent/hyper/, internal/agent/hyper_credits.go, internal/agent/request_timeout.go, internal/config/provider.go",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["efba40b7", "7dead4d4", "b4e25013", "65a9b8d9", "f9746789", "35a7bcab", "b07464e9", "cb85d7b6", "8e5b708d", "a98394ff", "80ebee41", "90683976", "402cea27", "947f148a", "ee455a99", "404a93c6", "63a73bab", "460653aa"]
+    },
+    {
+      "file": "08-配置系统.md",
+      "level": "module",
+      "source_scope": "internal/config/config.go, internal/config/load.go, internal/config/provider.go, internal/config/store.go, internal/ui/styles/palette.go, internal/ui/styles/theme_file.go, internal/ui/styles/themes.go, internal/shellconfig/options.go, internal/shellconfig/model.go",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["f38b7947", "56abdfa7", "a88b5735", "63a73bab", "460653aa", "402cea27", "947f148a", "ee455a99", "404a93c6", "00b33e4b", "6f670995", "1c08c35e", "563ff0f7", "8db8331c", "564d14e4"]
+    },
+    {
+      "file": "09-数据库与持久化.md",
+      "level": "module",
+      "source_scope": "internal/db/migrations/, internal/db/sql/, internal/db/*.go, internal/message/message.go",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["564d14e4", "978d49d5", "296b5c39", "463a0eb1", "595f625f", "d55e017d"]
+    },
+    {
+      "file": "11-MCP协议支持.md",
+      "level": "module",
+      "source_scope": "internal/agent/tools/mcp/init.go, internal/agent/tools/mcp/lifecycle.go, internal/agent/tools/mcp/channel.go, internal/agent/tools/mcp/tools.go",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["564d14e4", "1ea27147", "1e5be92e", "ad901405"]
+    },
+    {
+      "file": "12-Shell执行引擎.md",
+      "level": "module",
+      "source_scope": "internal/shell/truncate.go, internal/shell/persist_message.go, internal/shell/coreutils_exec.go",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["10ec02a5", "1c08c35e", "b8e93d11"]
+    },
+    {
+      "file": "15-TUI终端界面.md",
+      "level": "module",
+      "source_scope": "internal/ui/styles/, internal/ui/dialog/, internal/ui/model/, internal/ui/chat/, internal/clipboard/",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["f38b7947", "56abdfa7", "a88b5735", "1648f10a", "564d14e4", "62de0deb", "563ff0f7", "e3dc6d2a", "f043451d", "04a2cd85", "5c6dd666", "6f1fd614", "8ce2bdfb", "35b5f877", "0ffab3f7", "fd58b5ed", "9207cb2c", "2019da14", "87a5bbd8", "e41ae8ee", "9636af64", "242b4d3a", "eb845a9e", "051fb37a", "833bef63", "074e41e1", "cdc72006", "4a74b9e0", "3429749e", "c8a9842d", "ef87ba3b", "7b38a40e", "46469e2c", "48f4e8a4", "3f575432", "4ab302dd", "52cbd4b6", "8597c9b7", "35a7bcab", "b07464e9", "68d768c1", "18447d5f", "bc3931c8", "e2f077cd", "7a63cb15", "33be610d", "d25b5eee", "3a84d5e7", "616c17ba", "094ac5db", "04eed5d4", "45a45c5c", "652f74ff", "efba40b7", "fded9d7d"]
+    },
+    {
+      "file": "16-客户端服务器架构.md",
+      "level": "module",
+      "source_scope": "internal/backend/, internal/server/, internal/client/, internal/workspace/, internal/apigen/",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["564d14e4", "1648f10a", "03667134", "c21c7c45", "00b33e4b", "6f670995", "563ff0f7"]
+    },
+    {
+      "file": "17-错误处理与恢复.md",
+      "level": "module",
+      "source_scope": "internal/agent/request_timeout.go, internal/agent/agent.go, internal/agent/tools/mcp/init.go, internal/backend/channels.go, internal/backend/backend.go",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["63a73bab", "460653aa", "1ea27147", "1e5be92e", "63829edf", "564d14e4", "1648f10a", "03667134"]
+    },
+    {
+      "file": "18-构建与部署.md",
+      "level": "module",
+      "source_scope": "go.mod, go.sum, Taskfile.yaml, .goreleaser.yaml, .github/workflows/",
+      "status": "pending",
+      "phase": "pending",
+      "commits": ["7dead4d4", "1c08c35e", "ad901405", "52cbd4b6", "f38b7947", "efba40b7", "460653aa", "63a73bab"]
+    },
+    {
+      "file": "README.md",
+      "level": "index",
+      "source_scope": "docs/adrian/sourceReader/",
+      "status": "pending",
+      "phase": "pending",
+      "commits": []
+    }
+  ]
+}
