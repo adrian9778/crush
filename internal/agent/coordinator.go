@@ -136,6 +136,9 @@ type Coordinator interface {
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
 	IsBusy() bool
+	// ListSettledMessages reads a session's transcript, first settling any
+	// tool calls a dead process left without a reply.
+	ListSettledMessages(ctx context.Context, sessionID string) ([]message.Message, error)
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
@@ -351,6 +354,9 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	}
 
 	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg)
+
+	// Inject session_id for OpenRouter sticky routing (no-op for other providers).
+	injectOpenrouterSessionID(mergedOptions, sessionID)
 
 	if err := c.refreshTokenIfExpired(ctx, providerCfg); err != nil {
 		// NOTE(@andreynering): We don't return here because the event handling to ask the user to reauthenticate
@@ -776,6 +782,19 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.
 	return options
 }
 
+// injectOpenrouterSessionID adds session_id to OpenRouter ProviderOptions
+// ExtraBody for sticky routing and upstream session grouping.
+func injectOpenrouterSessionID(opts fantasy.ProviderOptions, sessionID string) {
+	if o, ok := opts[openrouter.Name].(*openrouter.ProviderOptions); ok {
+		if o.ExtraBody == nil {
+			o.ExtraBody = make(map[string]any)
+		}
+		if _, exists := o.ExtraBody["session_id"]; !exists {
+			o.ExtraBody["session_id"] = session.HashID(sessionID)
+		}
+	}
+}
+
 func mergeCallOptions(model Model, cfg config.ProviderConfig) (fantasy.ProviderOptions, *float64, *float64, *int64, *float64, *float64) {
 	modelOptions := getProviderOptions(model, cfg)
 	temp := cmp.Or(model.ModelCfg.Temperature, model.CatwalkCfg.Options.Temperature)
@@ -878,7 +897,7 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 
 	allTools = append(
 		allTools,
-		tools.NewBashTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Config().Options.DataDirectory, c.cfg.Config().Options.Attribution, modelID),
+		tools.NewBashTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Config().Options.DataDirectory, c.cfg.Config().Options.Attribution, modelID, c.cfg.Config().Options.GetMaxBackgroundJobs()),
 		tools.NewCrushInfoTool(c.cfg, c.lspManager, c.allSkills, c.activeSkills, c.skillTracker),
 		tools.NewCrushLogsTool(logFile),
 		tools.NewJobOutputTool(c.cfg.Config().Options.DataDirectory),
@@ -1139,6 +1158,15 @@ func (c *coordinator) buildOpenaiProvider(baseURL, apiKey string, headers map[st
 }
 
 func (c *coordinator) buildOpenrouterProvider(_, apiKey string, headers map[string]string) (fantasy.Provider, error) {
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	if _, ok := headers["HTTP-Referer"]; !ok {
+		headers["HTTP-Referer"] = "https://charm.land/crush"
+	}
+	if _, ok := headers["X-Title"]; !ok {
+		headers["X-Title"] = "Crush"
+	}
 	opts := []openrouter.Option{
 		openrouter.WithAPIKey(apiKey),
 	}
@@ -1429,6 +1457,10 @@ func (c *coordinator) IsSessionBusy(sessionID string) bool {
 	return c.currentAgent().IsSessionBusy(sessionID)
 }
 
+func (c *coordinator) ListSettledMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
+	return c.currentAgent().ListSettledMessages(ctx, sessionID)
+}
+
 func (c *coordinator) Model() Model {
 	return c.currentAgent().Model()
 }
@@ -1489,7 +1521,9 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 
 	// Auth failures during summarize flow through fantasy's OnAuthRefresh,
 	// the same path used by regular turns.
-	return agent.Summarize(ctx, sessionID, getProviderOptions(agent.Model(), providerCfg), c.makeAuthRefreshCallback(providerCfg))
+	opts := getProviderOptions(agent.Model(), providerCfg)
+	injectOpenrouterSessionID(opts, sessionID)
+	return agent.Summarize(ctx, sessionID, opts, c.makeAuthRefreshCallback(providerCfg))
 }
 
 // GenerateTitle generates a session title using the current agent.
@@ -1682,11 +1716,13 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 
 	// Run the agent
 	run := func() (*fantasy.AgentResult, error) {
+		subOpts := getProviderOptions(model, providerCfg)
+		injectOpenrouterSessionID(subOpts, session.ID)
 		return params.Agent.Run(ctx, SessionAgentCall{
 			SessionID:        session.ID,
 			Prompt:           params.Prompt,
 			MaxOutputTokens:  maxTokens,
-			ProviderOptions:  getProviderOptions(model, providerCfg),
+			ProviderOptions:  subOpts,
 			Temperature:      model.ModelCfg.Temperature,
 			TopP:             model.ModelCfg.TopP,
 			TopK:             callTopK(providerCfg, model.ModelCfg.TopK),
